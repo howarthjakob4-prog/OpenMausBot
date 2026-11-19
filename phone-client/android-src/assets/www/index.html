@@ -17,7 +17,9 @@
   h1 { font-size: 24px; margin: 0 0 2px; font-weight: 650; letter-spacing: .2px; }
   .owner { color: #e8a33d; font-size: 13px; letter-spacing: .5px; margin: 0 0 8px; }
   .sub { color: #a8a8a8; font-size: 15px; text-align: center; margin: 0 0 26px; line-height: 1.45; max-width: 340px; }
-  .status { color: #e8a33d; font-size: 15px; margin-top: 10px; }
+  .status { color: #e8a33d; font-size: 15px; margin-top: 10px; text-align: center; line-height: 1.5; }
+  .pulse { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
   .card {
     width: 100%; max-width: 360px; background: #121212; border: 1px solid #262626;
     border-radius: 16px; padding: 18px 16px;
@@ -46,22 +48,19 @@
   <h1>OpenMausBot</h1>
   <p class="owner">JAKOB HOWARTH · FERRUM</p>
 
-  <!-- Auto state: pairing from a link, or opening the saved workspace -->
   <p id="statusLine" class="status hidden"></p>
 
-  <!-- First run / recovery: no form, just paste the pairing link Muse sent -->
   <div id="waitBox" class="hidden" style="width:100%;max-width:360px;">
-    <p class="sub" style="margin-left:auto;margin-right:auto;">No login, no forms. This phone pairs from a
-      link Muse sends you — tap it, or paste it here. After that, this app
-      opens straight into your bots.</p>
-    <div id="errBox" class="err hidden">Couldn't reach your server. Check the
-      address in the link, make sure the server is running, and try again.</div>
+    <p class="sub" style="margin-left:auto;margin-right:auto;">No login, no forms, no
+      subscription. This phone pairs from a link Muse sends you — tap it, or paste
+      it here. After that, this app opens straight into your bots.</p>
+    <div id="errBox" class="err hidden"></div>
     <form id="pasteCard" class="card" autocomplete="off">
       <label for="link">Pairing link</label>
       <input id="link" type="text" placeholder="Paste the whole link" />
       <button type="submit">Pair this phone</button>
       <button id="retryBtn" type="button" class="secondary hidden">Try my server again</button>
-      <button id="forgetBtn" type="button" class="secondary hidden">Forget saved server</button>
+      <button id="forgetBtn" type="button" class="secondary hidden">Forget this phone's pairing</button>
       <p class="help">A pairing link works once. If one expires, Muse sends a
         fresh one. To revoke this phone completely, run
         <i>openmausbot devices</i> on the server.</p>
@@ -69,93 +68,74 @@
   </div>
 
 <script>
-  var KEY = 'maus.server';
   var params = new URLSearchParams(location.search);
   var statusLine = document.getElementById('statusLine');
   var waitBox = document.getElementById('waitBox');
+  var errBox = document.getElementById('errBox');
+  var state = params.get('state') || '';
+  var pairLink = params.get('pair') || '';
+  var bridge = window.FerrumRelay || null;
 
-  function normalize(addr) {
-    addr = (addr || '').trim();
-    if (!addr) return '';
-    if (!/^https?:\/\//i.test(addr)) addr = 'https://' + addr;
-    return addr.replace(/\/+$/, '');
+  function setStatus(text, pulse) {
+    statusLine.textContent = text || '';
+    statusLine.classList.toggle('hidden', !text);
+    statusLine.classList.toggle('pulse', !!pulse);
   }
-  // Pull {server, code} out of anything Muse might send: a mauspair:// link
-  // (?server=&code=), the server's own pairing link (<server>/pair#code=),
-  // or a page URL opened with ?server=&code=.
-  function parseLink(input) {
-    input = (input || '').trim();
-    if (!input) return null;
-    var server = '', code = '';
-    var sm = input.match(/[?&]server=([^&\s]+)/);
-    if (sm) server = decodeURIComponent(sm[1]);
-    var cm = input.match(/[#?&]code=([^&\s]+)/);
-    if (cm) code = decodeURIComponent(cm[1]);
-    if (!server) {
-      var om = input.match(/^(https?:\/\/[^\/\s]+)/i);
-      if (om && /\/pair/.test(input)) server = om[1];
-    }
-    if (!code && !/[#?&]/.test(input)) code = input.replace(/\s+/g, '');
-    server = normalize(server);
-    if (!server && !code) return null;
-    return { server: server, code: code };
+  function showWait() { waitBox.classList.remove('hidden'); }
+  function showErr(text) {
+    errBox.textContent = text;
+    errBox.classList.remove('hidden');
   }
-  function saveServer(addr) {
-    try { if (addr) localStorage.setItem(KEY, addr); } catch (e) {}
+  function hasSaved() {
+    try { return !!(bridge && bridge.savedServerName()); } catch (e) { return false; }
   }
-  function savedServer() {
-    try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; }
-  }
-  function goPair(server, code) {
-    statusLine.textContent = 'Pairing this phone…';
-    statusLine.classList.remove('hidden');
-    setTimeout(function () {
-      location.replace(server + '/pair#code=' + encodeURIComponent(code));
-    }, 500);
-  }
-  function goWorkspace(server) {
-    statusLine.textContent = 'Opening your workspace…';
-    statusLine.classList.remove('hidden');
-    setTimeout(function () { location.replace(server + '/'); }, 500);
-  }
-
-  var hadErr = params.get('err') === '1';
-  var linkServer = params.get('server') || '';
-  var linkCode = params.get('code') || '';
-  var saved = savedServer();
-
-  if (linkServer && linkCode && !hadErr) {
-    var srv = normalize(linkServer);
-    saveServer(srv);
-    goPair(srv, linkCode);
-  } else if (saved && !hadErr) {
-    goWorkspace(saved);
-  } else {
-    // First run, or a failed load: show the waiting/paste state.
-    waitBox.classList.remove('hidden');
-    if (hadErr) document.getElementById('errBox').classList.remove('hidden');
-    if (saved) {
+  function armButtons() {
+    if (hasSaved()) {
       document.getElementById('retryBtn').classList.remove('hidden');
       document.getElementById('forgetBtn').classList.remove('hidden');
     }
   }
 
+  // Native -> page events while a flow is running.
+  window.__relay = function (ev, message) {
+    if (ev === 'pairing') setStatus('Pairing this phone…', true);
+    else if (ev === 'error') { showWait(); showErr(message || 'Something went wrong. Try again.'); armButtons(); setStatus('', false); }
+  };
+
+  if (!bridge) {
+    showWait();
+    showErr('This page pairs from inside the app.');
+  } else if (state === 'pair' && pairLink) {
+    setStatus('Pairing this phone…', true);
+    bridge.pair(pairLink);
+  } else if (state === 'connecting') {
+    setStatus('Connecting to your server…', true);
+  } else if (state === 'error') {
+    showWait();
+    showErr("Couldn't reach your server. Check your connection, or paste a fresh pairing link.");
+    armButtons();
+  } else if (state === 'removed') {
+    showWait();
+    showErr('This phone was removed on the server. Paste a fresh pairing link to pair it again.');
+  } else {
+    showWait();
+    armButtons();
+  }
+
   document.getElementById('pasteCard').addEventListener('submit', function (ev) {
     ev.preventDefault();
-    var parsed = parseLink(document.getElementById('link').value);
-    if (!parsed) { document.getElementById('link').focus(); return; }
-    var server = parsed.server || savedServer();
-    if (!server) { document.getElementById('link').focus(); return; }
-    saveServer(server);
-    if (parsed.code) goPair(server, parsed.code); else goWorkspace(server);
+    var value = document.getElementById('link').value.trim();
+    if (!value) { document.getElementById('link').focus(); return; }
+    if (!bridge) { showErr('This page pairs from inside the app.'); return; }
+    errBox.classList.add('hidden');
+    setStatus('Pairing this phone…', true);
+    bridge.pair(value);
   });
   document.getElementById('retryBtn').addEventListener('click', function () {
-    var s = savedServer();
-    if (s) goWorkspace(s);
+    if (bridge) { setStatus('Connecting to your server…', true); bridge.reconnect(); }
   });
   document.getElementById('forgetBtn').addEventListener('click', function () {
-    try { localStorage.removeItem(KEY); } catch (e) {}
-    location.replace(location.pathname);
+    if (bridge) bridge.forget();
   });
 </script>
 </body>
