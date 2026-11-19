@@ -20,13 +20,13 @@ import java.util.Map;
  * OpenMausBot phone client shell (Jakob Howarth's fork).
  *
  * A single WebView. The bundled page (assets/www, served from the local
- * https host "maus.local") is only the launcher: it stores the server
- * address, takes a pairing code, and hands the WebView over to the real
- * OpenMausBot web UI on the user's own server. Pairing state lives in the
- * server origin's cookies/storage inside this WebView, so it persists
- * across launches. If the saved server cannot be reached, the WebView
- * falls back to the launcher with an error banner and a way to change
- * the server address.
+ * https host "maus.local") is only the launcher: there is no login form —
+ * the phone pairs from a mauspair:// link (or a pasted pairing link), and
+ * afterwards the launcher auto-opens the saved server's workspace.
+ * Pairing state lives in the server origin's cookies/storage inside this
+ * WebView, so it persists across launches. If the saved server cannot be
+ * reached, the WebView falls back to the launcher with an error banner
+ * and recovery controls.
  */
 public class MainActivity extends Activity {
     private static final String HOST = "maus.local";
@@ -125,7 +125,38 @@ public class MainActivity extends Activity {
         });
 
         setContentView(webView);
-        webView.loadUrl("https://" + HOST + "/");
+        webView.loadUrl(startUrl(getIntent()));
+    }
+
+    /**
+     * A mauspair:// link (sent by Muse) carries ?server= and ?code=; the
+     * bundled launcher page reads them and pairs with no form at all.
+     * Anything else just opens the launcher, which auto-opens the saved
+     * workspace.
+     */
+    private String startUrl(android.content.Intent intent) {
+        if (intent != null && android.content.Intent.ACTION_VIEW.equals(intent.getAction())) {
+            Uri data = intent.getData();
+            if (data != null && "mauspair".equals(data.getScheme())) {
+                String server = data.getQueryParameter("server");
+                String code = data.getQueryParameter("code");
+                if (server != null && code != null) {
+                    return "https://" + HOST + "/?server=" + Uri.encode(server)
+                            + "&code=" + Uri.encode(code);
+                }
+            }
+        }
+        return "https://" + HOST + "/";
+    }
+
+    @Override
+    protected void onNewIntent(android.content.Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (webView != null) {
+            String url = startUrl(intent);
+            if (url.contains("server=")) webView.loadUrl(url);
+        }
     }
 
     @Override
