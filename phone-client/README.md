@@ -57,3 +57,15 @@ his real logo by make_icons.py — no generated art), and the launcher is
 signed "JAKOB HOWARTH · FERRUM". Same package and signing key as v0.1.0,
 so it installs as an upgrade. Proof screenshot:
 release-check/05-launcher-shield.png.
+
+## v0.1.2 (2026-11-19) — login screen removed
+At Jakob's order the server-address + pairing-code form is gone. The
+client now pairs from a mauspair:// deep link (server + code carried in
+the link; MainActivity forwards them to the launcher page, which pairs
+with no form at all), or from one pasted pairing link. After pairing,
+the launcher auto-opens the workspace on every launch — no login screen
+ever again. The server's own one-tap Connect confirm (its anti-phishing
+step) is the only tap left, and only on pairing day. Proof:
+release-check/06-pair-confirm.png, 07-workspace-autopair.png,
+08-waiting-screen.png (deep-link params auto-paired to the real server;
+workspace loaded; proof device revoked afterwards).
