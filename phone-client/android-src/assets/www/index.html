@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>OpenMausBot</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #070707; color: #f2f2f2;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 40px 22px 32px;
+  }
+  .mark { width: 84px; height: 84px; border-radius: 20px; margin-bottom: 12px; }
+  h1 { font-size: 24px; margin: 0 0 6px; font-weight: 650; letter-spacing: .2px; }
+  .sub { color: #a8a8a8; font-size: 15px; text-align: center; margin: 0 0 26px; line-height: 1.45; max-width: 340px; }
+  .card {
+    width: 100%; max-width: 360px; background: #121212; border: 1px solid #262626;
+    border-radius: 16px; padding: 18px 16px;
+  }
+  label { display: block; font-size: 13px; color: #c9c9c9; margin: 14px 0 6px; }
+  label:first-child { margin-top: 0; }
+  input {
+    width: 100%; padding: 12px 12px; font-size: 16px; border-radius: 10px;
+    border: 1px solid #333; background: #0c0c0c; color: #f2f2f2; outline: none;
+  }
+  input:focus { border-color: #e8a33d; }
+  button {
+    width: 100%; margin-top: 18px; padding: 13px; font-size: 16px; font-weight: 600;
+    border: 0; border-radius: 10px; background: #e8a33d; color: #141414; cursor: pointer;
+  }
+  button.secondary { background: #1d1d1d; color: #e8e8e8; border: 1px solid #333; margin-top: 10px; }
+  .help { color: #8a8a8a; font-size: 13px; line-height: 1.5; margin: 14px 2px 0; }
+  .err {
+    width: 100%; max-width: 360px; background: #2a1414; border: 1px solid #5a2626; color: #f0c9c9;
+    border-radius: 12px; padding: 12px 14px; font-size: 14px; margin-bottom: 16px; line-height: 1.45;
+  }
+  .server-line { font-size: 15px; word-break: break-all; }
+  .server-line b { color: #e8a33d; font-weight: 600; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+  <img class="mark" src="app-icon-192.png" alt="OpenMausBot" />
+  <h1>OpenMausBot</h1>
+  <p class="sub">Your team of bots lives on your server. This phone is how you talk to them — chats and approvals, in your pocket.</p>
+
+  <div id="errBox" class="err hidden">Couldn't reach your server. Check the address, make sure the server is running, and try again.</div>
+
+  <!-- Setup: no server saved yet -->
+  <form id="setupCard" class="card hidden" autocomplete="off">
+    <label for="server">Server address</label>
+    <input id="server" type="url" inputmode="url" placeholder="https://your-server.example" />
+    <label for="code">Pairing code or pairing link</label>
+    <input id="code" type="text" placeholder="XXXX-XXXX-XXXX" />
+    <button type="submit">Pair this phone</button>
+    <p class="help">The server prints a pairing code and link when it starts
+      (<i>openmausbot pair</i> makes a fresh one). A code works once. You can
+      paste the whole pairing link into the code box instead.</p>
+  </form>
+
+  <!-- Saved server -->
+  <div id="savedCard" class="card hidden">
+    <p class="server-line">Server: <b id="savedAddr"></b></p>
+    <button id="openBtn" type="button">Open workspace</button>
+    <button id="forgetBtn" type="button" class="secondary">Use a different server</button>
+    <p class="help">Forgetting only clears the address on this phone. To revoke
+      this phone's access completely, run <i>openmausbot devices</i> on the server.</p>
+  </div>
+
+<script>
+  var KEY = 'maus.server';
+  var params = new URLSearchParams(location.search);
+  if (params.get('err') === '1') document.getElementById('errBox').classList.remove('hidden');
+
+  function normalize(addr) {
+    addr = (addr || '').trim();
+    if (!addr) return '';
+    if (!/^https?:\/\//i.test(addr)) addr = 'https://' + addr;
+    return addr.replace(/\/+$/, '');
+  }
+  function codeFrom(input) {
+    input = (input || '').trim();
+    var m = input.match(/[#?&]code=([^&\s]+)/);
+    if (m) return decodeURIComponent(m[1]);
+    return input.replace(/\s+/g, '');
+  }
+
+  var saved = '';
+  try { saved = localStorage.getItem(KEY) || ''; } catch (e) {}
+  var setupCard = document.getElementById('setupCard');
+  var savedCard = document.getElementById('savedCard');
+
+  if (saved) {
+    document.getElementById('savedAddr').textContent = saved;
+    savedCard.classList.remove('hidden');
+  } else {
+    setupCard.classList.remove('hidden');
+  }
+
+  setupCard.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var addr = normalize(document.getElementById('server').value);
+    var code = codeFrom(document.getElementById('code').value);
+    if (!addr) { document.getElementById('server').focus(); return; }
+    try { localStorage.setItem(KEY, addr); } catch (e) {}
+    if (code) {
+      location.href = addr + '/pair#code=' + encodeURIComponent(code);
+    } else {
+      location.href = addr + '/';
+    }
+  });
+
+  document.getElementById('openBtn').addEventListener('click', function () {
+    if (saved) location.href = saved + '/';
+  });
+  document.getElementById('forgetBtn').addEventListener('click', function () {
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    savedCard.classList.add('hidden');
+    setupCard.classList.remove('hidden');
+  });
+</script>
+</body>
+</html>
