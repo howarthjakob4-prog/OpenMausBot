@@ -17,29 +17,27 @@
   h1 { font-size: 24px; margin: 0 0 2px; font-weight: 650; letter-spacing: .2px; }
   .owner { color: #e8a33d; font-size: 13px; letter-spacing: .5px; margin: 0 0 8px; }
   .sub { color: #a8a8a8; font-size: 15px; text-align: center; margin: 0 0 26px; line-height: 1.45; max-width: 340px; }
+  .status { color: #e8a33d; font-size: 15px; margin-top: 10px; }
   .card {
     width: 100%; max-width: 360px; background: #121212; border: 1px solid #262626;
     border-radius: 16px; padding: 18px 16px;
   }
-  label { display: block; font-size: 13px; color: #c9c9c9; margin: 14px 0 6px; }
-  label:first-child { margin-top: 0; }
+  label { display: block; font-size: 13px; color: #c9c9c9; margin: 0 0 6px; }
   input {
     width: 100%; padding: 12px 12px; font-size: 16px; border-radius: 10px;
     border: 1px solid #333; background: #0c0c0c; color: #f2f2f2; outline: none;
   }
   input:focus { border-color: #e8a33d; }
   button {
-    width: 100%; margin-top: 18px; padding: 13px; font-size: 16px; font-weight: 600;
+    width: 100%; margin-top: 14px; padding: 13px; font-size: 16px; font-weight: 600;
     border: 0; border-radius: 10px; background: #e8a33d; color: #141414; cursor: pointer;
   }
-  button.secondary { background: #1d1d1d; color: #e8e8e8; border: 1px solid #333; margin-top: 10px; }
+  button.secondary { background: #1d1d1d; color: #e8e8e8; border: 1px solid #333; }
   .help { color: #8a8a8a; font-size: 13px; line-height: 1.5; margin: 14px 2px 0; }
   .err {
     width: 100%; max-width: 360px; background: #2a1414; border: 1px solid #5a2626; color: #f0c9c9;
     border-radius: 12px; padding: 12px 14px; font-size: 14px; margin-bottom: 16px; line-height: 1.45;
   }
-  .server-line { font-size: 15px; word-break: break-all; }
-  .server-line b { color: #e8a33d; font-weight: 600; }
   .hidden { display: none; }
 </style>
 </head>
@@ -47,35 +45,34 @@
   <img class="mark" src="app-icon-192.png" alt="Ferrum dragon shield" />
   <h1>OpenMausBot</h1>
   <p class="owner">JAKOB HOWARTH · FERRUM</p>
-  <p class="sub">Your team of bots lives on your server. This phone is how you talk to them — chats and approvals, in your pocket.</p>
 
-  <div id="errBox" class="err hidden">Couldn't reach your server. Check the address, make sure the server is running, and try again.</div>
+  <!-- Auto state: pairing from a link, or opening the saved workspace -->
+  <p id="statusLine" class="status hidden"></p>
 
-  <!-- Setup: no server saved yet -->
-  <form id="setupCard" class="card hidden" autocomplete="off">
-    <label for="server">Server address</label>
-    <input id="server" type="url" inputmode="url" placeholder="https://your-server.example" />
-    <label for="code">Pairing code or pairing link</label>
-    <input id="code" type="text" placeholder="XXXX-XXXX-XXXX" />
-    <button type="submit">Pair this phone</button>
-    <p class="help">The server prints a pairing code and link when it starts
-      (<i>openmausbot pair</i> makes a fresh one). A code works once. You can
-      paste the whole pairing link into the code box instead.</p>
-  </form>
-
-  <!-- Saved server -->
-  <div id="savedCard" class="card hidden">
-    <p class="server-line">Server: <b id="savedAddr"></b></p>
-    <button id="openBtn" type="button">Open workspace</button>
-    <button id="forgetBtn" type="button" class="secondary">Use a different server</button>
-    <p class="help">Forgetting only clears the address on this phone. To revoke
-      this phone's access completely, run <i>openmausbot devices</i> on the server.</p>
+  <!-- First run / recovery: no form, just paste the pairing link Muse sent -->
+  <div id="waitBox" class="hidden" style="width:100%;max-width:360px;">
+    <p class="sub" style="margin-left:auto;margin-right:auto;">No login, no forms. This phone pairs from a
+      link Muse sends you — tap it, or paste it here. After that, this app
+      opens straight into your bots.</p>
+    <div id="errBox" class="err hidden">Couldn't reach your server. Check the
+      address in the link, make sure the server is running, and try again.</div>
+    <form id="pasteCard" class="card" autocomplete="off">
+      <label for="link">Pairing link</label>
+      <input id="link" type="text" placeholder="Paste the whole link" />
+      <button type="submit">Pair this phone</button>
+      <button id="retryBtn" type="button" class="secondary hidden">Try my server again</button>
+      <button id="forgetBtn" type="button" class="secondary hidden">Forget saved server</button>
+      <p class="help">A pairing link works once. If one expires, Muse sends a
+        fresh one. To revoke this phone completely, run
+        <i>openmausbot devices</i> on the server.</p>
+    </form>
   </div>
 
 <script>
   var KEY = 'maus.server';
   var params = new URLSearchParams(location.search);
-  if (params.get('err') === '1') document.getElementById('errBox').classList.remove('hidden');
+  var statusLine = document.getElementById('statusLine');
+  var waitBox = document.getElementById('waitBox');
 
   function normalize(addr) {
     addr = (addr || '').trim();
@@ -83,45 +80,82 @@
     if (!/^https?:\/\//i.test(addr)) addr = 'https://' + addr;
     return addr.replace(/\/+$/, '');
   }
-  function codeFrom(input) {
+  // Pull {server, code} out of anything Muse might send: a mauspair:// link
+  // (?server=&code=), the server's own pairing link (<server>/pair#code=),
+  // or a page URL opened with ?server=&code=.
+  function parseLink(input) {
     input = (input || '').trim();
-    var m = input.match(/[#?&]code=([^&\s]+)/);
-    if (m) return decodeURIComponent(m[1]);
-    return input.replace(/\s+/g, '');
-  }
-
-  var saved = '';
-  try { saved = localStorage.getItem(KEY) || ''; } catch (e) {}
-  var setupCard = document.getElementById('setupCard');
-  var savedCard = document.getElementById('savedCard');
-
-  if (saved) {
-    document.getElementById('savedAddr').textContent = saved;
-    savedCard.classList.remove('hidden');
-  } else {
-    setupCard.classList.remove('hidden');
-  }
-
-  setupCard.addEventListener('submit', function (ev) {
-    ev.preventDefault();
-    var addr = normalize(document.getElementById('server').value);
-    var code = codeFrom(document.getElementById('code').value);
-    if (!addr) { document.getElementById('server').focus(); return; }
-    try { localStorage.setItem(KEY, addr); } catch (e) {}
-    if (code) {
-      location.href = addr + '/pair#code=' + encodeURIComponent(code);
-    } else {
-      location.href = addr + '/';
+    if (!input) return null;
+    var server = '', code = '';
+    var sm = input.match(/[?&]server=([^&\s]+)/);
+    if (sm) server = decodeURIComponent(sm[1]);
+    var cm = input.match(/[#?&]code=([^&\s]+)/);
+    if (cm) code = decodeURIComponent(cm[1]);
+    if (!server) {
+      var om = input.match(/^(https?:\/\/[^\/\s]+)/i);
+      if (om && /\/pair/.test(input)) server = om[1];
     }
-  });
+    if (!code && !/[#?&]/.test(input)) code = input.replace(/\s+/g, '');
+    server = normalize(server);
+    if (!server && !code) return null;
+    return { server: server, code: code };
+  }
+  function saveServer(addr) {
+    try { if (addr) localStorage.setItem(KEY, addr); } catch (e) {}
+  }
+  function savedServer() {
+    try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; }
+  }
+  function goPair(server, code) {
+    statusLine.textContent = 'Pairing this phone…';
+    statusLine.classList.remove('hidden');
+    setTimeout(function () {
+      location.replace(server + '/pair#code=' + encodeURIComponent(code));
+    }, 500);
+  }
+  function goWorkspace(server) {
+    statusLine.textContent = 'Opening your workspace…';
+    statusLine.classList.remove('hidden');
+    setTimeout(function () { location.replace(server + '/'); }, 500);
+  }
 
-  document.getElementById('openBtn').addEventListener('click', function () {
-    if (saved) location.href = saved + '/';
+  var hadErr = params.get('err') === '1';
+  var linkServer = params.get('server') || '';
+  var linkCode = params.get('code') || '';
+  var saved = savedServer();
+
+  if (linkServer && linkCode && !hadErr) {
+    var srv = normalize(linkServer);
+    saveServer(srv);
+    goPair(srv, linkCode);
+  } else if (saved && !hadErr) {
+    goWorkspace(saved);
+  } else {
+    // First run, or a failed load: show the waiting/paste state.
+    waitBox.classList.remove('hidden');
+    if (hadErr) document.getElementById('errBox').classList.remove('hidden');
+    if (saved) {
+      document.getElementById('retryBtn').classList.remove('hidden');
+      document.getElementById('forgetBtn').classList.remove('hidden');
+    }
+  }
+
+  document.getElementById('pasteCard').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var parsed = parseLink(document.getElementById('link').value);
+    if (!parsed) { document.getElementById('link').focus(); return; }
+    var server = parsed.server || savedServer();
+    if (!server) { document.getElementById('link').focus(); return; }
+    saveServer(server);
+    if (parsed.code) goPair(server, parsed.code); else goWorkspace(server);
+  });
+  document.getElementById('retryBtn').addEventListener('click', function () {
+    var s = savedServer();
+    if (s) goWorkspace(s);
   });
   document.getElementById('forgetBtn').addEventListener('click', function () {
     try { localStorage.removeItem(KEY); } catch (e) {}
-    savedCard.classList.add('hidden');
-    setupCard.classList.remove('hidden');
+    location.replace(location.pathname);
   });
 </script>
 </body>
