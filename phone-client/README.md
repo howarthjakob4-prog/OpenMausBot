@@ -49,3 +49,11 @@ devices were revoked afterward.
   step, when he is ready.
 - The APK was verified by web-level end-to-end proof plus packaging
   checks; the on-phone install verdict is Jakob's, as with every build.
+
+## v0.1.1 (2026-11-19) — Jakob's branding
+At Jakob's order the mouse is gone. The launcher icon and the launcher
+page now carry his own Ferrum dragon shield (hand-composited in PIL from
+his real logo by make_icons.py — no generated art), and the launcher is
+signed "JAKOB HOWARTH · FERRUM". Same package and signing key as v0.1.0,
+so it installs as an upgrade. Proof screenshot:
+release-check/05-launcher-shield.png.
